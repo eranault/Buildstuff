@@ -1,0 +1,140 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "codegraph/graph",
+  "title": "CodeGraph — shared graph output schema",
+  "description": "Both the Python and JS/TS analyzers MUST emit exactly this shape. The backend merges two GraphResult objects and the frontend consumes one.",
+  "type": "object",
+  "required": ["nodes", "edges"],
+  "properties": {
+    "repo": {
+      "type": "string",
+      "description": "Source GitHub URL that was analyzed"
+    },
+    "summary": {
+      "type": "string",
+      "description": "Whole-graph plain-English summary. Empty until M6 enrichment runs."
+    },
+    "warnings": {
+      "type": "array",
+      "description": "Structural issues found during merge/enrichment (M6).",
+      "items": { "$ref": "#/$defs/Warning" }
+    },
+    "nodes": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/Node" }
+    },
+    "edges": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/Edge" }
+    }
+  },
+  "$defs": {
+    "NodeType": {
+      "type": "string",
+      "enum": ["table", "file", "function", "component", "route", "service"],
+      "description": "table=DB table/model, file=source file, function=plain function/method, component=React component, route=HTTP handler, service=external service (e.g. Supabase client)"
+    },
+    "Language": {
+      "type": "string",
+      "enum": ["python", "typescript", "javascript", "sql", "prisma", "unknown"]
+    },
+    "EdgeKind": {
+      "type": "string",
+      "enum": ["imports", "calls", "reads", "writes", "defines", "relation"],
+      "description": "imports=file→file, calls=fn→fn, reads=fn/file→table (SELECT), writes=fn/file→table (INSERT/UPDATE/DELETE), defines=file→fn/component/route, relation=table→table (FK)"
+    },
+    "WarningKind": {
+      "type": "string",
+      "enum": ["orphan_table", "unused_env_var", "duplicate_table"]
+    },
+    "TableField": {
+      "type": "object",
+      "required": ["name", "type"],
+      "properties": {
+        "name":         { "type": "string" },
+        "type":         { "type": "string" },
+        "nullable":     { "type": "boolean" },
+        "isPrimaryKey": { "type": "boolean" },
+        "isForeignKey": { "type": "boolean" }
+      }
+    },
+    "NodeMeta": {
+      "type": "object",
+      "description": "Node-type-specific extra data. All fields optional; consume only what applies to the node type.",
+      "properties": {
+        "fields": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/TableField" },
+          "description": "table nodes: column definitions"
+        },
+        "exported": {
+          "type": "boolean",
+          "description": "function / component nodes: whether the symbol is exported"
+        },
+        "params": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "function nodes: parameter names in declaration order"
+        },
+        "httpMethod": {
+          "type": "string",
+          "enum": ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"],
+          "description": "route nodes: HTTP method"
+        },
+        "routePath": {
+          "type": "string",
+          "description": "route nodes: URL path pattern, e.g. /api/users/[id]"
+        }
+      }
+    },
+    "Node": {
+      "type": "object",
+      "required": ["id", "type", "name", "language", "file"],
+      "description": "Node ID conventions (both analyzers MUST follow these): file → 'file:{rel/path}', table → 'table:{TableName}', function → 'fn:{rel/path}:{fnName}', component → 'component:{rel/path}:{Name}', route → 'route:{METHOD}:{path}', service → 'service:{name}'",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Globally unique. See ID conventions in the parent description."
+        },
+        "type":     { "$ref": "#/$defs/NodeType" },
+        "name":     { "type": "string", "description": "Short human-readable label (no path prefix)" },
+        "language": { "$ref": "#/$defs/Language" },
+        "file": {
+          "type": "string",
+          "description": "Relative path from repo root. Use empty string for nodes derived from a schema file that is itself already a node (e.g. a table inside schema.prisma)."
+        },
+        "line": {
+          "type": "integer",
+          "description": "1-based line number where this node is defined, if known"
+        },
+        "description": {
+          "type": "string",
+          "description": "One-sentence plain-English description. Empty until M6 enrichment."
+        },
+        "meta": { "$ref": "#/$defs/NodeMeta" }
+      }
+    },
+    "Edge": {
+      "type": "object",
+      "required": ["source", "target", "kind"],
+      "properties": {
+        "source": { "type": "string", "description": "Source node id" },
+        "target": { "type": "string", "description": "Target node id" },
+        "kind":   { "$ref": "#/$defs/EdgeKind" },
+        "line": {
+          "type": "integer",
+          "description": "1-based line number of the reference in the source file, if known"
+        }
+      }
+    },
+    "Warning": {
+      "type": "object",
+      "required": ["kind", "message"],
+      "properties": {
+        "kind":    { "$ref": "#/$defs/WarningKind" },
+        "message": { "type": "string" },
+        "nodeId":  { "type": "string", "description": "The node this warning refers to, if applicable" }
+      }
+    }
+  }
+}
